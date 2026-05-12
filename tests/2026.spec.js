@@ -4,7 +4,7 @@ const path = require('path');
 
 //   ── 3A. BASIC INFINITE SCROLL ────────────────────────────────────────
   
-//   🇧🇩 বাংলায়: Page-এর একদম নিচে scroll করো, নতুন content
+//    Page-এর একদম নিচে scroll করো, নতুন content
 //               load হওয়ার জন্য wait করো, আবার scroll করো।
 //               এটা চালাতে থাকো যতক্ষণ না শেষ হয়।
   
@@ -23,8 +23,11 @@ test('Site 3 — books.toscrape.com (collect all books)', async ({ page }) => {
   while (true) {
  
     // ✅ বর্তমান page-র সব books collect করো
-    // selector: .product_pod — প্রতিটা book card
+    // page.locator(...)Page-এ element খোঁজো||'.product_pod h3 a'CSS selector — কোন element চাই.|| allTextContents()সব matched element-এর text একসাথে array হিসেবে দাও
     const books = await page.locator('.product_pod h3 a').allTextContents();
+    //books.forEach(...)Array-র প্রতিটা item এর জন্য একবার করে কাজ করো
+    //b => ...প্রতিটা book-কে b নামে ধরো (arrow function)||b.trim()b-এর আগে/পরের extra space সরাও
+    //collectedBooks.add(...)Set-এ যোগ করো (duplicate হলে ignore করবে)
     books.forEach(b => collectedBooks.add(b.trim()));
  
     console.log(`📚 Collected ${collectedBooks.size} books so far...`);
@@ -100,7 +103,7 @@ test('Site 3 — books.toscrape.com (collect all books)', async ({ page }) => {
 
 //   // ── 3C. LAZY LOADING IMAGES ──────────────────────────────────────────
 //   //
-//   // 🇧🇩 বাংলায়: Image যখন viewport-এ আসে তখনই load হয়।
+//   // Image যখন viewport-এ আসে তখনই load হয়।
 //   //             আমাদের scroll করে image-এর কাছে যেতে হবে,
 //   //             তারপর দেখতে হবে image সঠিকভাবে load হলো কিনা।
 //   //
@@ -110,11 +113,15 @@ test('Site 3 — books.toscrape.com (collect all books)', async ({ page }) => {
  
   // ✅ OPTION 1: Pixabay — loading="lazy" image আছে
   await page.goto('https://pixabay.com/images/search/nature/', {
+    //HTML parse হলেই শুরু করো, সব resource load হওয়ার জন্য wait করো না
     waitUntil: 'domcontentloaded'
   });
   await page.waitForTimeout(2000);
  
   // ✅ Pixabay-তে img[loading="lazy"] আছে কিনা check করো
+    //<!-- Browser এই image টা তখনই load করবে যখন viewport-এ আসবে -->
+//<img src="nature.jpg" loading="lazy" />
+//<!--                  ↑ এই attribute আছে এমন img খুঁজছি -->
   const lazyImages = page.locator('img[loading="lazy"]');
   const count = await lazyImages.count();
   console.log(`Total lazy images found: ${count}`);
@@ -122,7 +129,9 @@ test('Site 3 — books.toscrape.com (collect all books)', async ({ page }) => {
   if (count === 0) {
     // 🇧🇩 এই site-এ loading="lazy" নেই — তাই fallback selector use করো
     console.log('⚠️ No img[loading="lazy"] found. Using fallback selector...');
- 
+//  Pixabay হয়তো loading="lazy" attribute use করে না
+// কিন্তু তাদের নিজস্ব lazy loading system আছে
+// তাই alternative selector দিয়ে images খুঁজতে হয়
     // Pixabay-র actual image selector
     const allImages = page.locator('.results img, .media img');
     const imgCount  = await allImages.count();
@@ -138,18 +147,26 @@ test('Site 3 — books.toscrape.com (collect all books)', async ({ page }) => {
       );
       console.log(`Image ${i + 1}: ${isLoaded ? '✅ Loaded' : '❌ Failed'}`);
     }
-    return;
+    return; // Fallback কাজ করলে নিচের code আর চালানো দরকার নেই || এখানেই test gracefully শেষ হয়
   }
  
   // ✅ তোমার original code — শুধু URL বদলানো
   const imageCount = await lazyImages.count();
- 
+ //ধরো imageCount = 150  (page-এ ১৫০টা lazy image আছে) ||Math.min(150, 10) = 10  ← শুধু ১০টা check করবো
+    //imageCount = 5 হলে? || Math.min(5, 10) = 5  ← সবগুলোই check করবো (৫টাই আছে)
   for (let i = 0; i < Math.min(imageCount, 10); i++) {
-    const img = lazyImages.nth(i);
- 
-    await img.scrollIntoViewIfNeeded();
+    const img = lazyImages.nth(i);   //  lazyImages.nth(0) → 1ম lazy image
+ // IfNeeded: Image যদি already viewport-এ থাকে → scroll করবে না (অপ্রয়োজনীয় scroll avoid)
+// Image যদি viewport-এর বাইরে থাকে → scroll করে নিয়ে আসবে
+    await img.scrollIntoViewIfNeeded(); //  Image-কে viewport-এ নিয়ে আসো || Browser এখন image load করতে শুরু করবে ||
     await page.waitForTimeout(500);
- 
+ //el.complete
+// true  → image load শেষ হয়েছে (success বা fail যাই হোক)
+// false → এখনো loading চলছে
+
+//el.naturalWidth
+// 0          → image broken / load হয়নি
+// 800        → image সফলভাবে load হয়েছে (actual width)
     const isLoaded = await img.evaluate((el) => {
       return el.complete && el.naturalWidth > 0;
     });
@@ -160,7 +177,7 @@ test('Site 3 — books.toscrape.com (collect all books)', async ({ page }) => {
       console.log(`❌ Image ${i + 1}: Failed to load!`);
     }
  
-    await expect(img).not.toHaveAttribute('src', '');
+    await expect(img).not.toHaveAttribute('src', ''); //এই image-এর src attribute যেন empty string না হয়"
   }
  
   console.log('✅ 3C: Lazy loading image verification complete!');
